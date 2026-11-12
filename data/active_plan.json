@@ -1,0 +1,42 @@
+{
+  "plan_version": 0,
+  "updated_at": null,
+  "weekly_schedule": {
+    "Monday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    },
+    "Tuesday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    },
+    "Wednesday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    },
+    "Thursday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    },
+    "Friday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    },
+    "Saturday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    },
+    "Sunday": {
+      "focus": null,
+      "exercises": [],
+      "status": "planned"
+    }
+  },
+  "adjustment_history": []
+}

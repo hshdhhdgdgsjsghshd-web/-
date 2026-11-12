@@ -1,50 +1,49 @@
 # fitness-coach-agent
 
-开源健身私教 Agent · Sprint 1
-
-专业、科学、温和且有监督感的对话式私教：维护用户档案（含「有氧老手 / 力量新手」跨界标签）、记录训练与饮食，并在提到伤病时优先落档 + 保守建议 + 医疗免责声明。
+开源健身私教 Agent · 三表架构 + 软状态引擎
 
 ## 架构
 
 ```
-app.py                 # Streamlit 左右布局界面
-core/
-  prompts.py           # 私教 System Prompt
-  agent.py             # FitnessAgent（DeepSeek multi-tool loop）
-tools/
-  profile_tool.py      # get/update_user_profile + Mifflin-St Jeor
-  tracker_tool.py      # log_workout / log_diet / get_today_summary
-  storage.py           # data/ JSON 自动初始化
 data/
-  user_profile.json
-  workout_logs.json
-  diet_logs.json
+  user_profile.json   # 静态/低频档案 + calculated_baselines
+  active_plan.json    # 动态周计划（versioned）
+  daily_logs.json     # 按日期索引的训练/饮食流水
+
+tools/
+  profile_manager.py  # 档案读写 + Mifflin-St Jeor 确定性基线
+  plan_manager.py     # 周计划读写与版本历史
+  log_manager.py      # 打卡流水 + volume/营养累计
+
+core/
+  state.py            # get_system_snapshot() → ONBOARDING / PLANNING / DAILY_COACHING
+  prompts.py          # 动态注入快照的 System Prompt（全工具开放）
+  agent.py            # DeepSeek FitnessAgent 多工具闭环
+
+app.py                # Streamlit：三模块侧边栏 + 对话
 ```
 
 ## 快速开始
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env        # 填入 DEEPSEEK_API_KEY
+cp .env.example .env   # 填入 DEEPSEEK_API_KEY
 streamlit run app.py
+python scripts/smoke_tools.py
 ```
 
-`.env` 需要：
+## 软状态策略
 
-- `DEEPSEEK_API_KEY`
-- `DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com`）
-- 模型：`deepseek-chat`
+| 阶段 | 条件 | 优先任务 |
+| --- | --- | --- |
+| ONBOARDING | 档案必填项未齐 | 补齐性别/年龄/身高/体重/目标/运动基础 |
+| PLANNING | 档案齐但计划空 | 生成并保存第一版周计划 |
+| DAILY_COACHING | 档案+计划就绪 | 日常督促、打卡、动态修订 |
 
-## Sprint 1 能力
+状态只影响优先级提示，**不锁死工具**；可随时跨阶段改体重/伤病、修订计划或记录打卡。
 
-- 档案读写与局部更新；身高体重年龄性别齐全时自动推算热量 / 蛋白质目标
-- 训练与饮食流水记录
-- 今日训练打卡 + 热量/蛋白质进度
-- 多轮对话中连续多工具调用
-- 侧边栏实时可视化；聊天中用 `st.status` 展示教练正在执行的操作
+体重或目标变化且已有生效计划时，`update_user_profile` 会返回 `action_required`，提示模型询问是否同步修订计划。
 
 ## 免责声明
 
-本项目提供的健身与动作建议不能替代执业医师或物理治疗师的诊断与治疗。
+本项目提供的健身建议不能替代执业医师或物理治疗师的诊断与治疗。

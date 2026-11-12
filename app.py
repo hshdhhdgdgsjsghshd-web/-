@@ -1,4 +1,4 @@
-"""Streamlit UI for fitness-coach-agent (Sprint 1)."""
+"""Streamlit dashboard for fitness-coach-agent (architecture refactor)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,11 @@ import streamlit as st
 
 from core.agent import FitnessAgent
 from core.prompts import TOOL_STATUS_LABELS
-from tools.profile_tool import get_user_profile
+from core.state import get_system_snapshot
+from tools.plan_manager import get_active_plan
+from tools.profile_manager import get_user_profile
 from tools.storage import ensure_data_dir
-from tools.tracker_tool import get_today_summary
+from tools.log_manager import get_logs_by_date
 
 st.set_page_config(
     page_title="健身私教 Agent",
@@ -36,116 +38,164 @@ def clear_chat() -> None:
 
 
 def render_sidebar() -> None:
+    snapshot = get_system_snapshot()
     profile = get_user_profile()["profile"]
-    summary = get_today_summary()
-    basic = profile.get("basic_info") or {}
-    experience = profile.get("experience_profile") or {}
-    injuries = profile.get("injuries") or []
-    targets = profile.get("daily_targets") or {}
-    diet = summary.get("diet") or {}
-    workouts = summary.get("workouts") or []
+    plan_result = get_active_plan()
+    plan = plan_result["plan"]
+    today = get_logs_by_date()
+
+    basic = profile.get("basic_metrics") or {}
+    fitness = profile.get("fitness_background") or {}
+    health = profile.get("health_and_constraints") or {}
+    baselines = profile.get("calculated_baselines") or {}
+    summary = today.get("daily_summary") or {}
 
     st.sidebar.title("健身私教 Agent")
-    st.sidebar.caption("Sprint 1 · 档案 / 打卡 / 对话")
+    st.sidebar.caption("三表架构 · 软状态引擎")
 
-    st.sidebar.subheader("基础档案")
-    st.sidebar.markdown(
-        f"""
-- **性别**：{basic.get("gender") or "未填写"}
-- **年龄**：{basic.get("age") or "未填写"}
-- **身高**：{_fmt(basic.get("height_cm"), "cm")}
-- **体重**：{_fmt(basic.get("weight_kg"), "kg")}
-- **目标**：{basic.get("goal") or "未填写"}
+    # ① Stage + profile card
+    with st.sidebar.expander("① 系统阶段 · 身体档案", expanded=True):
+        stage = snapshot["stage"]
+        if stage == "ONBOARDING":
+            st.warning(f"阶段：{stage}")
+        elif stage == "PLANNING":
+            st.info(f"阶段：{stage}")
+        else:
+            st.success(f"阶段：{stage}")
+        st.caption(snapshot["priority"])
+
+        missing = snapshot["onboarding"]["missing_required_fields"]
+        if missing:
+            st.markdown("**缺失字段**")
+            st.code("\n".join(missing))
+
+        st.markdown(
+            f"""
+- 性别/年龄：{basic.get("gender") or "—"} / {basic.get("age") or "—"}
+- 身高/体重：{_fmt(basic.get("height_cm"), "cm")} / {_fmt(basic.get("weight_kg"), "kg")}
+- 目标：{basic.get("goal") or "—"}
+- 有氧/力量：{fitness.get("cardio_level") or "—"} / {fitness.get("strength_level") or "—"}
+- 每周：{fitness.get("weekly_days") or "—"}天 · {fitness.get("session_duration_min") or "—"}分
+- BMR/TDEE：{_fmt(baselines.get("bmr"), "")} / {_fmt(baselines.get("tdee"), "")}
+- 目标热量/蛋白：{_fmt(baselines.get("target_calories"), "kcal")} / {_fmt(baselines.get("target_protein_g"), "g")}
 """
-    )
+        )
 
-    st.sidebar.subheader("跨界能力标签")
-    tags = experience.get("cross_tags") or []
-    if not tags and (experience.get("cardio_level") or experience.get("strength_level")):
-        tags = [
-            t
-            for t in [experience.get("cardio_level"), experience.get("strength_level")]
-            if t
-        ]
-    if tags:
-        st.sidebar.write(" · ".join(f"`{tag}`" for tag in tags))
-    else:
-        st.sidebar.caption("暂无标签（对话中会自动沉淀）")
+        injuries = health.get("injuries") or []
+        if injuries:
+            for item in injuries:
+                st.error(f"伤病：{item}")
+        else:
+            st.success("伤病：暂无记录")
 
-    cardio = experience.get("cardio_level") or "未知"
-    strength = experience.get("strength_level") or "未知"
-    equipment = experience.get("available_equipment") or []
-    st.sidebar.markdown(
-        f"""
-- 有氧基础：{cardio}
-- 力量基础：{strength}
-- 可用器械：{", ".join(equipment) if equipment else "未填写"}
-"""
-    )
+        restrictions = health.get("dietary_restrictions") or []
+        if restrictions:
+            st.caption("饮食限制：" + " · ".join(restrictions))
 
-    st.sidebar.subheader("伤病警示")
-    if injuries:
-        for item in injuries:
-            st.sidebar.error(f"⚠ {item}")
-    else:
-        st.sidebar.success("暂无记录的伤病 / 疼痛")
+    # ② Active weekly plan summary
+    with st.sidebar.expander("② 生效周计划", expanded=True):
+        st.markdown(
+            f"- **版本**：v{plan.get('plan_version', 0)}\n"
+            f"- **更新**：{plan.get('updated_at') or '尚未创建'}"
+        )
+        plan_summary = plan_result.get("summary") or {}
+        active_days = plan_summary.get("active_training_days") or []
+        if plan_result.get("is_empty"):
+            st.caption("尚无生效计划（PLANNING 阶段应优先生成）")
+        else:
+            schedule = plan.get("weekly_schedule") or {}
+            for day in active_days:
+                item = schedule.get(day) or {}
+                focus = item.get("focus") or "未命名重点"
+                count = len(item.get("exercises") or [])
+                st.markdown(
+                    f"- **{day[:3]}**：{focus} · {count}动作 · `{item.get('status')}`"
+                )
 
-    st.sidebar.subheader("今日饮食进度")
-    calorie_target = targets.get("calories_kcal")
-    protein_target = targets.get("protein_g")
-    calories = float(diet.get("calories") or 0)
-    protein = float(diet.get("protein_g") or 0)
+        history = plan.get("adjustment_history") or []
+        if history:
+            last = history[-1]
+            st.caption(f"最近调整：v{last.get('version')} · {last.get('reason')}")
 
-    _progress_block(
-        label="热量",
-        current=calories,
-        target=calorie_target,
-        unit="kcal",
-    )
-    _progress_block(
-        label="蛋白质",
-        current=protein,
-        target=protein_target,
-        unit="g",
-    )
+    # ③ Today nutrition + training volume
+    with st.sidebar.expander("③ 今日营养 · 训练容量", expanded=True):
+        _progress_block(
+            label="热量",
+            current=float(summary.get("total_calories") or 0),
+            target=baselines.get("target_calories"),
+            unit="kcal",
+            in_sidebar=False,
+        )
+        _progress_block(
+            label="蛋白质",
+            current=float(summary.get("total_protein_g") or 0),
+            target=baselines.get("target_protein_g"),
+            unit="g",
+            in_sidebar=False,
+        )
+        st.metric(
+            "训练容量 volume",
+            f"{float(summary.get('total_volume_kg') or 0):.0f} kg",
+        )
 
-    st.sidebar.subheader("今日训练打卡")
-    if workouts:
-        for item in workouts:
-            st.sidebar.markdown(
-                f"- **{item.get('exercise')}** · "
-                f"{item.get('sets')}×{item.get('reps')} @ {item.get('weight_kg')}kg"
-                f" · {item.get('rpe_or_feeling')}"
-            )
-    else:
-        st.sidebar.caption("今天还没有训练记录")
+        workouts = today.get("workouts") or []
+        if workouts:
+            for item in workouts[:5]:
+                st.markdown(
+                    f"- {item.get('exercise')} · "
+                    f"{item.get('sets')}×{item.get('reps')}@{item.get('weight_kg')}kg"
+                    f" (= {item.get('volume_kg')}kg)"
+                )
+        else:
+            st.caption("今日尚无训练记录")
 
-    st.sidebar.divider()
+        meals = today.get("meals") or []
+        if meals:
+            for item in meals[:5]:
+                est = "估" if item.get("is_estimated") else "实"
+                st.markdown(
+                    f"- [{est}] {item.get('meal_time')} · {item.get('description')} · "
+                    f"{item.get('calories')}kcal"
+                )
+
     if st.sidebar.button("清空对话历史", use_container_width=True):
         clear_chat()
         st.rerun()
 
 
-def _progress_block(*, label: str, current: float, target: Any, unit: str) -> None:
+def _progress_block(
+    *,
+    label: str,
+    current: float,
+    target: Any,
+    unit: str,
+    in_sidebar: bool = True,
+) -> None:
+    write = st.sidebar.write if in_sidebar else st.write
+    progress = st.sidebar.progress if in_sidebar else st.progress
     if target in (None, ""):
-        st.sidebar.write(f"{label}：{current:.0f} {unit} / 目标未设定")
-        st.sidebar.progress(0.0)
+        write(f"{label}：{current:.0f} {unit} / 目标未设定")
+        progress(0.0)
         return
     target_f = float(target)
     ratio = 0.0 if target_f <= 0 else min(current / target_f, 1.0)
-    st.sidebar.write(f"{label}：{current:.0f} / {target_f:.0f} {unit}")
-    st.sidebar.progress(ratio)
+    write(f"{label}：{current:.0f} / {target_f:.0f} {unit}")
+    progress(ratio)
 
 
 def _fmt(value: Any, unit: str) -> str:
     if value in (None, ""):
-        return "未填写"
+        return "—"
     return f"{value}{unit}"
 
 
 def render_chat() -> None:
+    snapshot = get_system_snapshot()
     st.title("你的专属健身私教")
-    st.caption("告诉我身体数据、训练感受或今天吃了什么——我会记档案、盯进度、给建议。")
+    st.caption(
+        f"当前阶段 **{snapshot['stage']}** · 全工具开放 · "
+        "可随时改档案 / 修订计划 / 打卡记录"
+    )
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -167,7 +217,9 @@ def render_chat() -> None:
                             language="json",
                         )
 
-    prompt = st.chat_input("例如：我是跑步老手但力量新手，左膝偶尔会痛…")
+    prompt = st.chat_input(
+        "例如：男/28岁/175cm/70kg，目标减脂；有氧老手力量新手，每周练4天…"
+    )
     if not prompt:
         return
 
@@ -220,7 +272,7 @@ def render_chat() -> None:
                     "tool_events": collected_events,
                 }
             )
-        except Exception as exc:  # noqa: BLE001 — show setup errors in UI
+        except Exception as exc:  # noqa: BLE001
             status_box.update(label="出错了", state="error")
             error_text = f"无法完成回复：{exc}"
             st.error(error_text)

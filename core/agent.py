@@ -1,4 +1,4 @@
-"""FitnessAgent — DeepSeek multi-turn + multi-tool calling loop."""
+"""FitnessAgent — DeepSeek multi-turn + concurrent multi-tool loop."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from core.prompts import SYSTEM_PROMPT, TOOL_STATUS_LABELS
+from core.prompts import TOOL_STATUS_LABELS, build_system_prompt
 from tools import ALL_TOOLS, TOOL_HANDLERS
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -71,9 +71,9 @@ class FitnessAgent:
         on_tool_start: OnToolStart | None = None,
         on_tool_end: OnToolEnd | None = None,
     ) -> AgentTurnResult:
-        """Run one user turn with multi-tool calling until a final text reply."""
+        """One user turn: refresh soft-state prompt, then multi-tool loop."""
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": build_system_prompt()},
         ]
         if history:
             messages.extend(history)
@@ -102,6 +102,7 @@ class FitnessAgent:
                     tool_events=tool_events,
                 )
 
+            # Support multiple tool calls in a single assistant message.
             for tool_call in tool_calls:
                 name = tool_call.function.name
                 arguments = self._parse_arguments(tool_call.function.arguments)
@@ -132,10 +133,9 @@ class FitnessAgent:
                     }
                 )
 
-        # Safety exit if the model keeps calling tools.
         fallback = (
-            "本轮工具调用次数过多，我先根据已有信息给你建议。"
-            "如果你愿意，可以再说一句，我继续跟进。"
+            "本轮工具调用次数过多，我先根据已落盘信息给你建议。"
+            "你可以继续补充，我会接着处理。"
         )
         return AgentTurnResult(
             reply=fallback,
@@ -151,7 +151,7 @@ class FitnessAgent:
             return handler(**arguments)
         except TypeError as exc:
             return {"ok": False, "error": f"参数错误: {exc}", "arguments": arguments}
-        except Exception as exc:  # noqa: BLE001 — surface tool failures to the model
+        except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc), "arguments": arguments}
 
     @staticmethod
@@ -186,5 +186,4 @@ class FitnessAgent:
 
     @staticmethod
     def _public_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Keep full multi-turn context including tool messages for the next turn."""
         return [m for m in messages if m.get("role") != "system"]
