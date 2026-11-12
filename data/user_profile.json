@@ -1,0 +1,27 @@
+{
+  "is_onboarding_complete": false,
+  "basic_metrics": {
+    "gender": null,
+    "age": null,
+    "height_cm": null,
+    "weight_kg": null,
+    "goal": null
+  },
+  "fitness_background": {
+    "cardio_level": null,
+    "strength_level": null,
+    "available_equipment": [],
+    "weekly_days": null,
+    "session_duration_min": null
+  },
+  "health_and_constraints": {
+    "injuries": [],
+    "dietary_restrictions": []
+  },
+  "calculated_baselines": {
+    "bmr": null,
+    "tdee": null,
+    "target_calories": null,
+    "target_protein_g": null
+  }
+}
