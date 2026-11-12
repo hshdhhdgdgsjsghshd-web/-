@@ -1,0 +1,20 @@
+{
+  "basic_info": {
+    "gender": null,
+    "age": null,
+    "height_cm": null,
+    "weight_kg": null,
+    "goal": null
+  },
+  "experience_profile": {
+    "cardio_level": null,
+    "strength_level": null,
+    "available_equipment": [],
+    "cross_tags": []
+  },
+  "injuries": [],
+  "daily_targets": {
+    "calories_kcal": null,
+    "protein_g": null
+  }
+}
